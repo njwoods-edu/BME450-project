@@ -1,0 +1,530 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from PIL import Image\n",
+    "import matplotlib.pyplot as plt\n",
+    "import torchvision.transforms as transforms\n",
+    "import torch\n",
+    "from torch.utils.data import DataLoader, Dataset\n",
+    "import os\n",
+    "import glob\n",
+    "import torch.nn as nn\n",
+    "import torch.nn.functional as F\n",
+    "import torch.optim as optim\n",
+    "from torch.utils.data import DataLoader\n",
+    "import torchvision\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "root_dir_orig = '/Users/cjk/Downloads/Dataset_BUSI_with_GT'\n",
+    "root_dir_train = '/Users/cjk/Documents/Purdue/BME450/Dataset_BUSI_with_GT/Train'\n",
+    "root_dir_test = '/Users/cjk/Documents/Purdue/BME450/Dataset_BUSI_with_GT/Test'"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# CNN CODE"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Loading and transforming data"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "class ImageFolderDataset(Dataset):\n",
+    "    def __init__(self, root_dir, transform=None, target_transform=None):\n",
+    "        self.root_dir = root_dir\n",
+    "        self.transform = transform\n",
+    "        self.target_transform = target_transform\n",
+    "        self.classes = sorted([d for d in os.listdir(root_dir) if not d.startswith('.')])\n",
+    "        self.class_to_idx = {self.classes[i]: i for i in range(len(self.classes))}\n",
+    "        self.image_paths = []\n",
+    "        self.labels = []\n",
+    "\n",
+    "        for class_name in self.classes:\n",
+    "            if bool == 1:\n",
+    "                class_dir = os.path.join(root_dir, class_name, 'train', 'train2')\n",
+    "            else:\n",
+    "                class_dir = os.path.join(root_dir, class_name, 'test')\n",
+    "            if os.path.isdir(class_dir):\n",
+    "                for image_path in glob.glob(os.path.join(class_dir, '*.png')):\n",
+    "                    filename = os.path.basename(image_path)  # Extract filename\n",
+    "                    if \"_mask\" in filename:  \n",
+    "                        #print(f\"Skipping: {image_path}\")  # Debugging: Check skipped files\n",
+    "                        continue  # Skip images with '_mask' in the filename\n",
+    "                    self.image_paths.append(image_path)\n",
+    "                    self.labels.append(self.class_to_idx[class_name])\n",
+    "\n",
+    "    \n",
+    "    def __len__(self):\n",
+    "        return len(self.image_paths)\n",
+    "    \n",
+    "    def __getitem__(self, idx):\n",
+    "        img_path = self.image_paths[idx]\n",
+    "        image = Image.open(img_path).convert('RGB')\n",
+    "        label = self.labels[idx]\n",
+    "        if self.transform:\n",
+    "            image = self.transform(image)\n",
+    "\n",
+    "        if self.target_transform:\n",
+    "            label = self.target_transform(label)\n",
+    "\n",
+    "        return image, label"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "transform_train = transforms.Compose([\n",
+    "    transforms.Resize((250, 250)),\n",
+    "    #transforms.RandomHorizontalFlip(),\n",
+    "    #transforms.RandomRotation(10),\n",
+    "    transforms.ToTensor(),\n",
+    "    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))\n",
+    "    ])\n",
+    "\n",
+    "transform_test = transforms.Compose([\n",
+    "    transforms.Resize((250, 250)), \n",
+    "    transforms.ToTensor(), \n",
+    "    ])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Convert tensor to numpy image for plotting\n",
+    "def tensor_to_numpy(img_tensor):\n",
+    "    # If it’s normalized or in [-1, 1] range, rescale to [0, 1]\n",
+    "    if img_tensor.min() < 0:\n",
+    "        img_tensor = (img_tensor + 1) / 2  # reverse [-1, 1] normalization\n",
+    "\n",
+    "    return img_tensor.permute(1, 2, 0).numpy()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "bool = 1\n",
+    "training_data = ImageFolderDataset(root_dir_train, transform=transform_train)\n",
+    "bool = 0\n",
+    "test_data = ImageFolderDataset(root_dir_test, transform=transform_test)\n",
+    "classes = ('benign', 'malignant', 'normal')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# sample = 10;\n",
+    "\n",
+    "# transformed_img = training_data[sample][0]\n",
+    "# original_img = Image.open(training_data[sample][2]).convert('RGB')\n",
+    "\n",
+    "# plt.figure(figsize=(10, 5))\n",
+    "\n",
+    "# plt.subplot(1, 2, 1)\n",
+    "# plt.imshow(original_img)\n",
+    "# plt.title('Original Image')\n",
+    "# plt.axis('off')\n",
+    "\n",
+    "# plt.subplot(1, 2, 2)\n",
+    "# plt.imshow(tensor_to_numpy(transformed_img))\n",
+    "# plt.title('Transformed Image')\n",
+    "# plt.axis('off')\n",
+    "\n",
+    "# plt.tight_layout()\n",
+    "# plt.show()\n",
+    "\n",
+    "# print(\"Class: \", classes[training_data[sample][1]])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Define CNN"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# class Net(nn.Module):\n",
+    "#     def __init__(self):\n",
+    "#         super().__init__()\n",
+    "#         self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, padding=1)\n",
+    "#         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)\n",
+    "#         self.conv2 = nn.Conv2d(in_channels= 16, out_channels=32, kernel_size=3, padding=1)\n",
+    "#         self.fc1 = nn.Linear(32 * 62 * 62, 128)\n",
+    "#         self.fc2 = nn.Linear(128, 64)\n",
+    "#         self.fc3 = nn.Linear(64, 3)\n",
+    "\n",
+    "#     def forward(self, x):\n",
+    "#         x = self.pool(F.relu(self.conv1(x)))\n",
+    "#         x = self.pool(F.relu(self.conv2(x)))\n",
+    "#         x = torch.flatten(x, 1)\n",
+    "#         x = F.relu(self.fc1(x))\n",
+    "#         x = F.relu(self.fc2(x))\n",
+    "#         x = self.fc3(x)\n",
+    "        \n",
+    "#         return x\n",
+    "\n",
+    "\n",
+    "class Net(nn.Module):\n",
+    "    def __init__(self):\n",
+    "        super().__init__()\n",
+    "        self.conv1 = nn.Conv2d(3, 32, kernel_size=5, padding=1)\n",
+    "        self.conv2 = nn.Conv2d(32, 64, kernel_size=5, padding=1)\n",
+    "        self.conv3 = nn.Conv2d(64, 128, kernel_size=5, padding=1)\n",
+    "        self.pool = nn.MaxPool2d(2, 2)\n",
+    "\n",
+    "        self.dropout = nn.Dropout(p=0.2)\n",
+    "        \n",
+    "        self.fc1 = nn.Linear(128 * 29 * 29, 128)\n",
+    "        self.fc2 = nn.Linear(128, 64)\n",
+    "        self.fc3 = nn.Linear(64, 3)\n",
+    "\n",
+    "    def forward(self, x):\n",
+    "        x = self.pool(F.relu(self.conv1(x)))\n",
+    "        x = self.pool(F.relu(self.conv2(x)))\n",
+    "        x = self.pool(F.relu(self.conv3(x)))\n",
+    "        x = torch.flatten(x, 1)  # flatten all but batch\n",
+    "        x = self.dropout(x)\n",
+    "        x = F.relu(self.fc1(x))\n",
+    "        x = self.dropout(x)\n",
+    "        x = F.relu(self.fc2(x))\n",
+    "        x = self.fc3(x)\n",
+    "        return x\n",
+    "    \n",
+    "\n",
+    "# class Net(nn.Module):\n",
+    "#     def __init__(self):\n",
+    "#         super().__init__()\n",
+    "#         self.conv1 = nn.Conv2d(3, 32, kernel_size=5, padding=1)\n",
+    "#         self.bn1 = nn.BatchNorm2d(32)\n",
+    "\n",
+    "#         self.conv2 = nn.Conv2d(32, 64, kernel_size=5, padding=1)\n",
+    "#         self.bn2 = nn.BatchNorm2d(64)\n",
+    "\n",
+    "#         self.conv3 = nn.Conv2d(64, 128, kernel_size=5, padding=1)\n",
+    "#         self.bn3 = nn.BatchNorm2d(128)\n",
+    "\n",
+    "#         self.pool = nn.MaxPool2d(2, 2)\n",
+    "#         self.dropout = nn.Dropout(0.2)\n",
+    "\n",
+    "#         self.fc1 = nn.Linear(128 * 29 * 29, 128)\n",
+    "#         self.fc2 = nn.Linear(128, 64)\n",
+    "#         self.fc3 = nn.Linear(64, 3)\n",
+    "\n",
+    "#     def forward(self, x):\n",
+    "#         x = self.pool(F.relu(self.bn1(self.conv1(x))))\n",
+    "#         x = self.pool(F.relu(self.bn2(self.conv2(x))))\n",
+    "#         x = self.pool(F.relu(self.bn3(self.conv3(x))))\n",
+    "#         x = torch.flatten(x, 1)\n",
+    "#         x = self.dropout(x)\n",
+    "#         x = F.relu(self.fc1(x))\n",
+    "#         x = self.dropout(x)\n",
+    "#         x = F.relu(self.fc2(x))\n",
+    "#         x = self.fc3(x)\n",
+    "#         return x\n",
+    "\n",
+    "\n",
+    "net = Net()\n",
+    "\n",
+    "# test sizes\n",
+    "#net(images)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### define loss"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "criterion = nn.CrossEntropyLoss()\n",
+    "optimizer = optim.Adam(net.parameters(), lr=0.0001)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Train!"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "batch_size = 10\n",
+    "train_loader = DataLoader(training_data, batch_size=batch_size, shuffle=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Epoch [1/25], Loss: 0.951\n",
+      "Epoch [2/25], Loss: 0.884\n",
+      "Epoch [3/25], Loss: 0.815\n",
+      "Epoch [4/25], Loss: 0.767\n",
+      "Epoch [5/25], Loss: 0.659\n",
+      "Epoch [6/25], Loss: 0.554\n",
+      "Epoch [7/25], Loss: 0.448\n",
+      "Epoch [8/25], Loss: 0.369\n",
+      "Epoch [9/25], Loss: 0.288\n",
+      "Epoch [10/25], Loss: 0.207\n",
+      "Epoch [11/25], Loss: 0.145\n",
+      "Epoch [12/25], Loss: 0.107\n",
+      "Epoch [13/25], Loss: 0.086\n",
+      "Epoch [14/25], Loss: 0.086\n",
+      "Epoch [15/25], Loss: 0.047\n",
+      "Epoch [16/25], Loss: 0.052\n",
+      "Epoch [17/25], Loss: 0.054\n",
+      "Epoch [18/25], Loss: 0.029\n",
+      "Epoch [19/25], Loss: 0.030\n",
+      "Epoch [20/25], Loss: 0.035\n",
+      "Epoch [21/25], Loss: 0.032\n",
+      "Epoch [22/25], Loss: 0.042\n",
+      "Epoch [23/25], Loss: 0.018\n",
+      "Epoch [24/25], Loss: 0.017\n",
+      "Epoch [25/25], Loss: 0.020\n",
+      "Finished Training\n"
+     ]
+    }
+   ],
+   "source": [
+    "for epoch in range(25):  # loop over the dataset multiple times\n",
+    "    net.train()\n",
+    "    running_loss = 0.0\n",
+    "    for i, data in enumerate(train_loader, 0):\n",
+    "        # get the inputs; data is a list of [inputs, labels]\n",
+    "        inputs, labels = data\n",
+    "\n",
+    "        # zero the parameter gradients\n",
+    "        optimizer.zero_grad()\n",
+    "\n",
+    "        # forward + backward + optimize\n",
+    "        outputs = net(inputs)\n",
+    "        loss = criterion(outputs, labels)\n",
+    "        loss.backward()\n",
+    "        optimizer.step()\n",
+    "\n",
+    "        # print statistics\n",
+    "        running_loss += loss.item()\n",
+    "        # if i % 100 == 99:    # print every 2000 mini-batches\n",
+    "        #     print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}')\n",
+    "        #     running_loss = 0.\n",
+    "    print(f'Epoch [{epoch+1}/25], Loss: {running_loss / len(train_loader):.3f}')\n",
+    "\n",
+    "print('Finished Training')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Save trained model\n",
+    "PATH = '/Users/cjk/Documents/Purdue/BME450/project_net.pth'\n",
+    "torch.save(net.state_dict(), PATH)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Test!"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "dataiter = iter(test_loader)\n",
+    "images, labels = next(dataiter)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "<All keys matched successfully>"
+      ]
+     },
+     "execution_count": 15,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "net = Net()\n",
+    "net.load_state_dict(torch.load(PATH))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Accuracy of the network on the test images: 36 %\n"
+     ]
+    }
+   ],
+   "source": [
+    "correct = 0\n",
+    "total = 0\n",
+    "# since we're not training, we don't need to calculate the gradients for our outputs\n",
+    "net.eval()\n",
+    "\n",
+    "with torch.no_grad():\n",
+    "    for data in test_loader:\n",
+    "        images, labels = data\n",
+    "        # calculate outputs by running images through the network\n",
+    "        outputs = net(images)\n",
+    "        # the class with the highest energy is what we choose as prediction\n",
+    "        _, predicted = torch.max(outputs.data, 1)\n",
+    "        total += labels.size(0)\n",
+    "        correct += (predicted == labels).sum().item()\n",
+    "\n",
+    "print(f'Accuracy of the network on the test images: {100 * correct // total} %')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Accuracy for class: benign is 100.0 %\n",
+      "Accuracy for class: malignant is 0.0 %\n",
+      "Accuracy for class: normal is 9.1 %\n"
+     ]
+    }
+   ],
+   "source": [
+    "# prepare to count predictions for each class\n",
+    "correct_pred = {classname: 0 for classname in classes}\n",
+    "total_pred = {classname: 0 for classname in classes}\n",
+    "\n",
+    "# again no gradients needed\n",
+    "with torch.no_grad():\n",
+    "    for data in test_loader:\n",
+    "        images, labels = data\n",
+    "        outputs = net(images)\n",
+    "        _, predictions = torch.max(outputs, 1)\n",
+    "        # collect the correct predictions for each class\n",
+    "        for label, prediction in zip(labels, predictions):\n",
+    "            label = label.item()\n",
+    "            prediction = prediction.item()\n",
+    "            if label == prediction:\n",
+    "                correct_pred[classes[label]] += 1\n",
+    "            total_pred[classes[label]] += 1\n",
+    "\n",
+    "\n",
+    "# print accuracy for each class\n",
+    "for classname, correct_count in correct_pred.items():\n",
+    "    accuracy = 100 * float(correct_count) / total_pred[classname]\n",
+    "    print(f'Accuracy for class: {classname:5s} is {accuracy:.1f} %')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "base",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.7"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
